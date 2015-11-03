@@ -27,6 +27,9 @@ const (
 	// Timeout for requests sent out to the engine.
 	requestTimeout = 10 * time.Second
 
+	// Timeout for engine response during refresh loop.
+        refreshResponseTimeout = requestTimeout + 60 * Time.Second
+
 	// Minimum docker engine version supported by swarm.
 	minSupportedVersion = version.Version("1.6.0")
 )
@@ -406,7 +409,18 @@ func (e *Engine) refreshLoop() {
 			return
 		}
 
-		err = e.RefreshContainers(false)
+		ch := make(chan bool, 1)
+		go func() {
+			err = e.RefreshContainers(false)
+			ch <- true
+		}()
+
+		select {
+		case <- ch:
+		case <- time.After(refreshResponseTimeout):
+			err = errors.New("Timed Out waiting for refresh!")
+		}
+
 		if err == nil {
 			// Do not check error as older daemon don't support this call
 			e.RefreshVolumes()
